@@ -2,13 +2,15 @@
 
 use super::TaskContext;
 use super::{pid_alloc, KernelStack, PidHandle};
-use crate::config::TRAP_CONTEXT;
+use crate::config::{TRAP_CONTEXT, MAX_SYSCALL_NUM, BIG_STRIDE, DEFAULT_PRIORITY, HALF_BIG_STRIDE};
 use crate::mm::{MemorySet, PhysPageNum, VirtAddr, KERNEL_SPACE};
 use crate::sync::UPSafeCell;
+use crate::timer::get_time_us;
 use crate::trap::{trap_handler, TrapContext};
 use alloc::sync::{Arc, Weak};
 use alloc::vec::Vec;
 use core::cell::RefMut;
+use core::cmp::Ordering;
 use crate::fs::{File, Stdin, Stdout};
 use alloc::string::String;
 use crate::mm::translated_refmut;
@@ -50,6 +52,14 @@ pub struct TaskControlBlockInner {
     /// It is set when active exit or execution error occurs
     pub exit_code: i32,
     pub fd_table: Vec<Option<Arc<dyn File + Send + Sync>>>,
+    /// call times of each syscall
+    pub syscall_times: [u32; MAX_SYSCALL_NUM],
+    /// running time
+    pub running_time: usize,
+    /// stride pass
+    pub pass : Pass,
+    /// each step stride
+    pub stride : usize
 }
 
 /// Simple access to its internal fields
@@ -124,6 +134,10 @@ impl TaskControlBlock {
                         // 2 -> stderr
                         Some(Arc::new(Stdout)),
                     ],
+                    syscall_times: [0; MAX_SYSCALL_NUM],
+                    running_time: get_time_us() / 1000,
+                    pass : Pass::new(),
+                    stride : BIG_STRIDE / DEFAULT_PRIORITY
                 })
             },
         };
@@ -200,6 +214,10 @@ impl TaskControlBlock {
                     children: Vec::new(),
                     exit_code: 0,
                     fd_table: new_fd_table,
+                    syscall_times: [0; MAX_SYSCALL_NUM],
+                    running_time: get_time_us() / 1000,
+                    pass : Pass::new(),
+                    stride : BIG_STRIDE / DEFAULT_PRIORITY
                 })
             },
         });
@@ -226,4 +244,39 @@ pub enum TaskStatus {
     Ready,
     Running,
     Zombie,
+}
+
+
+pub struct Pass(usize);
+
+impl Pass{
+    pub fn new() -> Self{
+        Self(0)
+    }
+
+    pub fn increase(&mut self,stride:usize){
+        self.0 += stride;
+    }
+}
+
+impl PartialOrd for Pass {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        let diff : usize;
+        if self.0 > other.0 {
+            diff = self.0 - other.0;
+        } else{
+            diff = other.0 - self.0;
+        }
+        if diff <= HALF_BIG_STRIDE{
+            Some(self.0.cmp(&other.0))
+        } else {
+            Some(other.0.cmp(&self.0))
+        } 
+    }
+}
+
+impl PartialEq for Pass {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
 }

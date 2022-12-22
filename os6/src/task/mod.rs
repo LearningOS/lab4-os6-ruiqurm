@@ -21,6 +21,7 @@ use alloc::sync::Arc;
 use lazy_static::*;
 use manager::fetch_task;
 use switch::__switch;
+use crate::config::MAX_SYSCALL_NUM;
 use crate::mm::VirtAddr;
 use crate::mm::MapPermission;
 use crate::config::PAGE_SIZE;
@@ -103,4 +104,17 @@ lazy_static! {
 
 pub fn add_initproc() {
     add_task(INITPROC.clone());
+}
+
+pub fn update_syscall_times(syscall_id : usize) {
+    let current = current_task().unwrap();
+    let mut inner = current.inner_exclusive_access();
+    inner.syscall_times[syscall_id] += 1;
+}
+
+/// get task syscall times and running time
+pub fn get_task_info() -> ([u32;MAX_SYSCALL_NUM],usize) {
+    let current = current_task().unwrap();
+    let inner = current.inner_exclusive_access();
+    (inner.syscall_times,get_time_us() / 1000 - inner.running_time)
 }
