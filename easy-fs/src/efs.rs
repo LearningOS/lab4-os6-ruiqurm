@@ -134,6 +134,13 @@ impl EasyFileSystem {
         let block_id = self.inode_area_start_block + inode_id / inodes_per_block;
         (block_id, (inode_id % inodes_per_block) as usize * inode_size)
     }
+
+    pub fn get_inode_id(&self,block_id:usize,block_offset:usize) -> usize{
+        let inode_size = core::mem::size_of::<DiskInode>();
+        let inodes_per_block = BLOCK_SZ / inode_size;
+        let inode_id = (block_id - self.inode_area_start_block as usize) * inodes_per_block + block_offset / inode_size;
+        inode_id
+    }
     /// Get data block by id
     pub fn get_data_block_id(&self, data_block_id: u32) -> u32 {
         self.data_area_start_block + data_block_id
@@ -160,5 +167,22 @@ impl EasyFileSystem {
             &self.block_device,
             (block_id - self.data_area_start_block) as usize
         )
+    }
+    
+    pub fn dealloc_inode(&mut self, block_id : usize, block_offset:usize){
+        let lock_cache = get_block_cache(block_id, Arc::clone(&self.block_device));
+        let mut cache = lock_cache.lock();
+        cache.modify(block_offset, |disk_inode:&mut DiskInode|{
+            let size = disk_inode.size;
+            let data_blocks_dealloc = disk_inode.clear_size(&self.block_device);
+            assert!(data_blocks_dealloc.len() == DiskInode::total_blocks(size) as usize);
+            for data_block in data_blocks_dealloc.into_iter() {
+                self.dealloc_data(data_block);
+            }
+            // not clear the data
+        });
+        let inode_id = self.get_inode_id(block_id, block_offset) as usize;
+        self.inode_bitmap.dealloc(&self.block_device,inode_id);
+        // not sync cache yet
     }
 }

@@ -1,4 +1,5 @@
 use core::fmt::{Debug, Formatter, Result};
+use core::mem::size_of;
 use super::{
     BLOCK_SZ,
     BlockDevice,
@@ -12,7 +13,7 @@ const EFS_MAGIC: u32 = 0x3b800001;
 /// The max number of direct inodes
 const INODE_DIRECT_COUNT: usize = 28;
 /// The max length of inode name
-const NAME_LENGTH_LIMIT: usize = 27;
+const NAME_LENGTH_LIMIT: usize = 26;
 /// The max number of indirect1 inodes
 const INODE_INDIRECT1_COUNT: usize = BLOCK_SZ / 4;
 /// The max number of indirect2 inodes
@@ -93,6 +94,7 @@ pub struct DiskInode {
     pub indirect1: u32,
     pub indirect2: u32,
     type_: DiskInodeType,
+    pub nlink : u16,
 }
 
 impl DiskInode {
@@ -104,6 +106,7 @@ impl DiskInode {
         self.indirect1 = 0;
         self.indirect2 = 0;
         self.type_ = type_;
+        self.nlink = 1;
     }
     /// Whether this inode is a directory
     pub fn is_dir(&self) -> bool {
@@ -422,29 +425,34 @@ impl DiskInode {
 
 /// A directory entry
 #[repr(C)]
+#[repr(align(8))]
 pub struct DirEntry {
-    name: [u8; NAME_LENGTH_LIMIT + 1],
+    // Don't move the order unless you can guarantee the alignment.
+    valid : bool,
+    name: [u8; NAME_LENGTH_LIMIT+1],
     inode_number: u32,
 }
 
 /// Size of a directory entry
-pub const DIRENT_SZ: usize = 32;
+pub const DIRENT_SZ: usize = size_of::<DirEntry>(); // 32 bytes now
 
 impl DirEntry {
     /// Create an empty directory entry
     pub fn empty() -> Self {
         Self {
-            name: [0u8; NAME_LENGTH_LIMIT + 1],
+            name: [0u8; NAME_LENGTH_LIMIT+1],
             inode_number: 0,
+            valid : false
         }
     }
     /// Crate a directory entry from name and inode number
     pub fn new(name: &str, inode_number: u32) -> Self {
-        let mut bytes = [0u8; NAME_LENGTH_LIMIT + 1];
+        let mut bytes = [0u8; NAME_LENGTH_LIMIT+1];
         bytes[..name.len()].copy_from_slice(name.as_bytes());
         Self {
             name: bytes,
             inode_number,
+            valid : true
         }
     }
     /// Serialize into bytes
@@ -473,5 +481,13 @@ impl DirEntry {
     /// Get inode number of the entry
     pub fn inode_number(&self) -> u32 {
         self.inode_number
+    }
+
+    pub fn set_invalid(&mut self) {
+        self.valid = false;
+    }
+
+    pub fn is_valid(&self) -> bool {
+        self.valid
     }
 }
