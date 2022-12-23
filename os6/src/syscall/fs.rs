@@ -1,5 +1,6 @@
 //! File and filesystem-related syscalls
 
+use crate::fs::StatMode;
 use crate::mm::translated_byte_buffer;
 use crate::mm::translated_str;
 use crate::mm::translated_refmut;
@@ -8,8 +9,8 @@ use crate::task::current_task;
 use crate::fs::open_file;
 use crate::fs::OpenFlags;
 use crate::fs::Stat;
+use crate::fs::{link_file,unlink_file};
 use crate::mm::UserBuffer;
-use alloc::sync::Arc;
 
 pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> isize {
     let token = current_user_token();
@@ -80,14 +81,35 @@ pub fn sys_close(fd: usize) -> isize {
 }
 
 // YOUR JOB: 扩展 easy-fs 和内核以实现以下三个 syscall
-pub fn sys_fstat(_fd: usize, _st: *mut Stat) -> isize {
-   -1
+pub fn sys_fstat(fd: usize, st: *mut Stat) -> isize {
+    let token = current_user_token();
+    let task = current_task().unwrap();
+    let inner = task.inner_exclusive_access();
+    if fd >= inner.fd_table.len() || fd < 3 {
+        return -1;
+    }
+    let inode = inner.fd_table[fd].clone().unwrap().inode();
+    *translated_refmut(token, st) = Stat::new(0, inode.id() as u64, if inode.is_dir() {StatMode::DIR} else {StatMode::FILE}, inode.nlink());
+    0
 }
 
-pub fn sys_linkat(_old_name: *const u8, _new_name: *const u8) -> isize {
-    -1
+pub fn sys_linkat(old_name: *const u8, _new_name: *const u8) -> isize {
+    let token = current_user_token();
+    let old_name = translated_str(token, old_name);
+    let new_name = translated_str(token, _new_name);
+    if link_file(old_name.as_str(), new_name.as_str()){
+        0
+    }else{
+        -1
+    }
 }
 
 pub fn sys_unlinkat(_name: *const u8) -> isize {
-    -1
+    let token = current_user_token();
+    let name = translated_str(token, _name);
+    if unlink_file(name.as_str()){
+        0
+    }else{
+        -1
+    }
 }

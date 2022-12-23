@@ -139,6 +139,17 @@ pub fn open_file(name: &str, flags: OpenFlags) -> Option<Arc<OSInode>> {
     }
 }
 
+pub fn link_file(old_name : &str, new_name:&str) -> bool{
+    println!("{}", ROOT_INODE.test());
+    ROOT_INODE.link(old_name, new_name)
+}
+
+pub fn unlink_file(name : &str) -> bool{
+    ROOT_INODE.unlink(name)
+}
+
+// pub fn stat_fd()
+
 impl File for OSInode {
     fn readable(&self) -> bool { self.readable }
     fn writable(&self) -> bool { self.writable }
@@ -165,5 +176,10 @@ impl File for OSInode {
             total_write_size += write_size;
         }
         total_write_size
+    }
+
+    fn inode(&self) -> Arc<Inode> {
+        let inner = self.inner.exclusive_access();
+        inner.inode.clone()
     }
 }

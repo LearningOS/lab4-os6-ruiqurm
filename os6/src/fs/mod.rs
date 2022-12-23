@@ -2,6 +2,7 @@ mod stdio;
 mod inode;
 
 use crate::mm::UserBuffer;
+use alloc::sync::Arc;
 
 /// The common abstraction of all IO resources
 pub trait File : Send + Sync {
@@ -9,6 +10,7 @@ pub trait File : Send + Sync {
     fn writable(&self) -> bool;
     fn read(&self, buf: UserBuffer) -> usize;
     fn write(&self, buf: UserBuffer) -> usize;
+    fn inode(&self) -> Arc<Inode>;
 }
 
 /// The stat of a inode
@@ -27,6 +29,18 @@ pub struct Stat {
     pad: [u64; 7],
 }
 
+impl Stat{
+    pub fn new(dev: u64, ino: u64, mode: StatMode, nlink: u32) -> Self {
+        Self {
+            dev,
+            ino,
+            mode,
+            nlink,
+            pad: [0; 7],
+        }
+    }
+}
+
 bitflags! {
     /// The mode of a inode
     /// whether a directory or a file
@@ -39,5 +53,6 @@ bitflags! {
     }
 }    
 
+use easy_fs::Inode;
 pub use stdio::{Stdin, Stdout};
-pub use inode::{OSInode, open_file, OpenFlags, list_apps};
+pub use inode::{OSInode, open_file, OpenFlags, list_apps,link_file,unlink_file};
